@@ -1,0 +1,27 @@
+version: "3.9"
+
+name: bpm_system
+
+services:
+  bpm:
+    build: 
+      dockerfile: Dockerfile
+    container_name: bpm_linux
+    hostname: bpm-linux
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      TZ: Europe/Moscow
+    working_dir: /app
+    volumes:
+       - ./:/app
+    ports:
+      - "5000:5000"
+      - "5002:5002"
+    networks:
+      - service_network
+    restart: unless-stopped
+
+networks:
+  service_network:
+    name: bpm_environment_service_network
+    external: true

@@ -4,9 +4,10 @@
 
 ## Требования для работы скрипта ##
 
-На целевом хосте Windows должны быть выполнены следующие требования:
-1. Установлен Docker.
-2. Настроена [политика](https://learn.microsoft.com/ru-ru/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-7.3) запуска внешних PowerShell скриптов без подписи.
+На целевом хосте должны быть выполнены следующие требования:
+1. Целевой хост - Windows.
+2. Установлен Docker.
+3. Настроена [политика](https://learn.microsoft.com/ru-ru/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-7.3) запуска внешних PowerShell скриптов без подписи.
 
 ### Общий вид алгоритма: ###
 
@@ -42,7 +43,7 @@
 
     * Настроить параметры для Redis
 5. Если планируется использование данного скрипта для разворачивания на https, то необходимо убрать один элемент основого процесса скрипта: 
-    ```
+    ```PowerShell
     UpdateFile -Path "Terrasoft.WebHost.dll.config" -SearchPattern '<add key="CookiesSameSiteMode" value="None" />' -ReplacePattern '<add key="CookiesSameSiteMode" value="Lax" />'
     ```
 ## Запуск приложения, доступ к pgadmin4 ##
@@ -165,3 +166,25 @@ $RedisDb = 1
 ```
 
 Задаёт номер базы данных Redis, используемой BPMSoft Constructor.
+
+
+## Протестировано ##
+- Docker Desktop 4.24.1 (123237)
+- Windows 11 22H2 (22621.2361)
+- 7_18_5_1501_SalesEnterprise_Linux_Softkey_PostgreSQL_ENU_NetCore
+
+## Известные проблемы ##
+
+- Проблема с переводом на русский язык - не все элементы интерфейса были переведены 
+- Ошибка при Восстановлении базы данных
+    1. Пользователь отличен от пользователя с ролью owner из файла бекапа
+        - **Решение:** изменить параметр <span style="color:lightblue"> $PostgreSqlUser </span> на необходимого пользователя
+    2. Восстановление БД невозможно, ошибка подключения, база не найдена, не существует пользователя
+        - **Решение:** Проверить соответствие параметра <span style="color:lightblue"> $PostgreSqlDbBackup </span> и названия файла в /db/... 
+        - **Решение:** в названиях использовать нижний регистр латиницы и нижнее подчеркивание "_". (Дело в том, что докер игнорирует верхний регистр при создании базы, а при восстановлении не может найти корректный путь/файл)
+- Не удается войти в приложение
+    - **Решение:** проверить тип соеднинения (http или https)
+    и изменить параметр на Lax - для http и none для https
+    ```shell
+    <add key="CookiesSameSiteMode" value="Lax" />
+    ```

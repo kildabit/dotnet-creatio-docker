@@ -17,6 +17,6 @@
 * db и redis в **ConnectionStrings.config** в соответствии с <span style="color:lightgreen"># DB connection strings</span> из скрипта
 
 ## Протестировано ##
-- Docker Desktop ???
-- MacOS 13 ???
+- Docker Desktop 4.24.0 (122432)
+- MacOS 13.6 (22G120)
 - 7_18_5_1501_SalesEnterprise_Linux_Softkey_PostgreSQL_ENU_NetCore

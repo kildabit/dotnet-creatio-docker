@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# 2. Put build_mac.sh , docker-compose.bpm-db.yml , docker-compose.bpm-linux.yml inside work catalogue: /Creatio_7.18.5.1501/.
+# 3. Replace backup name in ./db/backup_name.backup (contains only lowercase, without ".") like $PostgreSqlDbBackup
+# 4. Use $PostgreSqlUser = as owner db in backup
+
 # Global variables
 PostgreSqlContainer="bpm_postgres"
 ContainerNames=("bpm_postgres" "bpm_pgadmin" "bpm_redis" "bpm_constructor")
@@ -17,8 +21,7 @@ RedisHost="redis-7"
 RedisPort=6379
 RedisPassword="redispwd"
 RedisDb=1
-DbPuser="puser"
-DbPuserPass="creatio+"
+DockerNetwork="creatio_environment_service_network" # as docker-compose
 
 # DB connection strings
 PostgreSqlConnectionString="Pooling=True;Database=$PostgreSqlDb;Host=$PostgreSqlHost;Port=$PostgreSqlPort;Username=$PostgreSqlUser;Password=$PostgreSqlPassword;Timeout=500;Command Timeout=400"
@@ -53,78 +56,36 @@ function check_containers {
     done
 }
 
+function create_network {
+    echo "Start creating network for app and env"
+
+    if docker network inspect "$DockerNetwork" >/dev/null 2>&1; then
+        echo "Network $DockerNetwork already exists."
+    else
+        echo "Network $DockerNetwork: Creating network for app and environment"
+        docker network create --driver bridge --subnet 172.22.0.0/16 "$DockerNetwork"
+        echo "Network created!"
+    fi
+    #docker network create --driver bridge $DockerNetwork     
+}
 function create_db_containers {
     echo "Creating DB containers"
     docker compose -f $DbComposeFile up -d
     check_last_error_code -3
 }
 
-function create_postgresql_user_bad {
-    echo "Creating PostgreSQL user $PostgreSqlUser"
-
-    docker exec bpm_postgres /bin/sh -c "psql -U $PostgreSqlAdminUser -c \"
-    DO
-    \$$
-    BEGIN
-        IF EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$PostgreSqlUser') THEN
-            RAISE EXCEPTION 'Role $PostgreSqlUser already exists';
-        ELSE
-            CREATE ROLE $PostgreSqlUser LOGIN PASSWORD '$PostgreSqlPassword';
-        END IF;
-    END
-    \$$;\""
-
-    check_last_error_code -4
-}
 function create_postgresql_user {
     echo "Creating PostgreSQL user $PostgreSqlUser"
 
-    docker exec bpm_postgres /bin/sh -c "psql -U $PostgreSqlAdminUser -c \"CREATE ROLE $PostgreSqlUser LOGIN PASSWORD '$PostgreSqlPassword';\""
+    docker exec $PostgreSqlContainer /bin/sh -c "psql -U $PostgreSqlAdminUser -c \"CREATE ROLE $PostgreSqlUser LOGIN PASSWORD '$PostgreSqlPassword';\""
 
     check_last_error_code -4
-}
-
-function create_postgresql_user_puser {
-    echo "Creating PostgreSQL user $DbPuser"
-
-    docker exec bpm_postgres /bin/sh -c "psql -U $PostgreSqlAdminUser -c \"
-    DO
-    \$$
-    BEGIN
-        IF EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$DbPuser') THEN
-            RAISE EXCEPTION 'Role $DbPuser already exists';
-        ELSE
-            CREATE ROLE $DbPuser LOGIN PASSWORD '$DbPuserPass';
-        END IF;
-    END
-    \$$;\""
-
-    check_last_error_code -4
-}
-
-function create_postgresql_db_bad {
-    echo "Creating PostgreSQL DB $PostgreSqlDb"
-
-    docker exec bpm_postgres /bin/sh -c "psql -U $PostgreSqlAdminUser -c \"
-    DO
-    \$$
-    BEGIN
-       CREATE EXTENSION IF NOT EXISTS dblink;
-       IF EXISTS (SELECT FROM pg_database WHERE datname = '$PostgreSqlDb') THEN
-          RAISE EXCEPTION 'Database $PostgreSqlDb exists';
-       ELSE
-          PERFORM dblink_exec('dbname=' || current_database(), 'CREATE DATABASE $PostgreSqlDb WITH OWNER = $PostgreSqlUser ENCODING = ''UTF8''');
-       END IF;
-    END
-    \$$;\""
-
-    check_last_error_code -5
 }
 
 function create_postgresql_db {
     echo "Creating PostgreSQL DB $PostgreSqlDb"
 
-    docker exec bpm_postgres psql -U $PostgreSqlAdminUser -c "CREATE DATABASE $PostgreSqlDb WITH OWNER = $PostgreSqlUser ENCODING = 'UTF8'"
+    docker exec $PostgreSqlContainer psql -U $PostgreSqlAdminUser -c "CREATE DATABASE $PostgreSqlDb WITH OWNER = $PostgreSqlUser ENCODING = 'UTF8'"
 
     check_last_error_code -5
 }
@@ -137,7 +98,7 @@ function restore_postgresql_db {
 }
 
 function create_bpm_container {
-    echo "Creating BPM Constructor container"
+    echo "Creating Creatio container"
     docker compose -f $BpmConstructorComposeFile up -d
     check_last_error_code -7
 }
@@ -167,9 +128,9 @@ function update_file {
 
 clear_last_exit_code
 check_containers
+create_network
 create_db_containers
 create_postgresql_user
-#create_postgresql_user_puser
 create_postgresql_db
 restore_postgresql_db
 #update_file "Terrasoft.WebHost.dll.config" '<fileDesignMode enabled="false" />' '<fileDesignMode enabled="true" />'

@@ -1,13 +1,13 @@
 version: "3.9"
 
-name: bpm_system
+name: <%= name %>
 
 services:
-  bpm:
+  creatio:
     build: 
       dockerfile: Dockerfile
-    container_name: bpm_linux
-    hostname: bpm-linux
+    container_name: <%= container_name %>
+    hostname: <%= hostname %>
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       TZ: Europe/Moscow
@@ -23,5 +23,5 @@ services:
 
 networks:
   service_network:
-    name: bpm_environment_service_network
+    name: <%= network_name %>
     external: true

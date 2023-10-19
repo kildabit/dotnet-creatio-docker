@@ -1,20 +1,16 @@
-# 1. PowerShell (admin): "Get-ExecutionPolicy -list" - change to "Unrestricted" (https://learn.microsoft.com/ru-ru/powershell/module/microsoft.powershell.core/about/about_execution_policies?view=powershell-7.3)
-# for LOCAL MAHINE and CURRENT USER
-# 2. Put build.ps1 , docker-compose.creatio-db.yml , docker-compose.creatio-linux.yml inside work catalogue: /Creatio_7.18.5.1501/.
-# 3. Replace backup name in ./db/backup_name.backup (contains only lowercase, without ".") like $PostgreSqlDbBackup
-# 4. Use $PostgreSqlUser = as owner db in backup
-
 # Compatible with Windows host and Docker v4 (compose v >3.9) 
 # Tested with 7_18_5_1501_SalesEnterprise_Linux_Softkey_PostgreSQL_ENU_NetCore
 
 # GLOBAL VARIABLES
-
-$ProjectName = "creatio"
-$ApplicationDockerComposeOutputName = "docker-compose.creatio-linux.yml"
-$EnvironmentDockerComposeOutputName = "docker-compose.creatio-db.yml"
-
+# EDIT ONLY $ProjectName and (if requiered) $NetworkIP 
+# [!] DO NOT USE U-P-P-E-R-C-A-S-E in $ProjectName [!]
+$ProjectName = "demo"
+$NetworkIP = '172.24.0.0/16'
+$ApplicationDockerComposeOutputName = "docker-compose_creatio-linux.yml"
+$EnvironmentDockerComposeOutputName = "docker-compose_creatio-db.yml"
 
 # ---------------------------
+#Containers
 $PostgreSqlContainer = "${ProjectName}_postgres"
 $ContainerNames = @($PostgreSqlContainer, "${ProjectName}_pgadmin", "${ProjectName}_redis", "${ProjectName}_linux")
 $DbComposeFile = "$EnvironmentDockerComposeOutputName"
@@ -33,19 +29,20 @@ $RedisHost = "redis-7"
 $RedisPort = 6379
 $RedisPassword = "redispwd"
 $RedisDb = 1
-
 # network 
 $DockerNetwork = "${ProjectName}_environment_service_network"
-$NetworkIP = 172.24.0.0/16
-
 # DB connection strings
 $PostgreSqlConnectionString = "Pooling=True;Database=$PostgreSqlDb;Host=$PostgreSqlHost;Port=$PostgreSqlPort;Username=$PostgreSqlUser;Password=$PostgreSqlPassword;Timeout=500;Command Timeout=400"
 $RedisConnectionString = "host=$RedisHost;db=$RedisDb;port=$RedisPort;password=$RedisPassword"
 
+# Steps counter
+$Global:CurrentStep = 0
+$Global:TotalSteps = 15
+
+#FUNCTIONS
 function ClearLastExitCode {
     $Global:LASTEXITCODE = 0
 }
-
 function CheckLastErrorCode() {
     param([int] $ScriptExitCode)
 
@@ -55,46 +52,57 @@ function CheckLastErrorCode() {
     }
 }
 function GenerateEnvComposeFromTemplate {
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Generate Environment docker-compose from template" -ForegroundColor Magenta
     $ContainerNameCompose = "${ProjectName}_environment"
     $PostgresContainerName = "${ProjectName}_postgres"
     $PgAdminContainerName = "${ProjectName}_pgadmin"
     $RedisContainerName = "${ProjectName}_redis"
     $NetworkNameCompose = "${ProjectName}_environment_service_network"
 
-    # Загрузите содержимое Docker Compose файла
+    # Get context from template
     $dockerComposeContent = Get-Content -Path "docker-compose.creatio-db-template.yml"
 
-    # Замените <container_name> на значение из PowerShell
+    # Updating context in template
     $dockerComposeContent = $dockerComposeContent -replace "<%= environment_name %>", $ContainerNameCompose
     $dockerComposeContent = $dockerComposeContent -replace "<%= postgres_container_name %>", $PostgresContainerName
     $dockerComposeContent = $dockerComposeContent -replace "<%= pgadmin_container_name %>", $PgAdminContainerName
     $dockerComposeContent = $dockerComposeContent -replace "<%= redis_container_name %>", $RedisContainerName
     $dockerComposeContent = $dockerComposeContent -replace "<%= network_name %>", $NetworkNameCompose
 
-    # Сохраните обновленное содержимое в новом файле
+    # Create docker-compose for this project
     $dockerComposeContent | Set-Content -Path "$EnvironmentDockerComposeOutputName"
     Write-Host "Docker-compose file (env) generated! $EnvironmentDockerComposeOutputName" -ForegroundColor Cyan
+    Write-Host " "
 }
 function GenerateAppComposeFromTemplate {
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Generate Application docker-compose from template" -ForegroundColor Magenta
     $ContainerNameCompose = "${ProjectName}_linux"
     $SystemNameCompose = "${ProjectName}_system"
     $HostNameCompose = "${ProjectName}-linux"
     $NetworkNameCompose = "${ProjectName}_environment_service_network"
 
-    # Загрузите содержимое Docker Compose файла
+    # Get context from template
     $dockerComposeContent = Get-Content -Path "docker-compose.creatio-linux-template.yml"
 
-    # Замените <container_name> на значение из PowerShell
+    # Updating context in template
     $dockerComposeContent = $dockerComposeContent -replace "<%= name %>", $SystemNameCompose
     $dockerComposeContent = $dockerComposeContent -replace "<%= container_name %>", $ContainerNameCompose
     $dockerComposeContent = $dockerComposeContent -replace "<%= hostname %>", $HostNameCompose
     $dockerComposeContent = $dockerComposeContent -replace "<%= network_name %>", $NetworkNameCompose
 
-    # Сохраните обновленное содержимое в новом файле
+    # Create docker-compose for this project
     $dockerComposeContent | Set-Content -Path "$ApplicationDockerComposeOutputName"
     Write-Host "Docker-compose file (app) generated! $ApplicationDockerComposeOutputName" -ForegroundColor Cyan
+    Write-Host " "
 }
 function RenameDbBackup {
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Renaming db backup file" -ForegroundColor Magenta
     
     $pathToBackup = "db/"
     $FileNameExtension = ".backup"
@@ -113,56 +121,68 @@ function RenameDbBackup {
     } 
     elseif ($BackupFile.Count -eq 0) {
             Write-Host "File with extension '$FileNameExtension' not found." -ForegroundColor Red
+            Exit -$CurrentStep
     } 
     else {
             Write-Host "There are more then 1 file  *.'$FileNameExtension' in pathToBackup." -ForegroundColor Red
-    
+            Exit -$CurrentStep    
     }
-    Write-Host "Done" -ForegroundColor Green
+    #Write-Host "Done" -ForegroundColor Green
     Write-Host " "
     CheckLastErrorCode -ScriptExitCode -10
 }
 function CheckContainers() {
-    Write-Host "Checking exiting conatiners" -ForegroundColor Magenta
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Checking the existence of containers" -ForegroundColor Magenta
 
     foreach ($name in $ContainerNames) {
         $checkContainerCmdOutput = docker ps -q -f name="$name"
 
-        CheckLastErrorCode -ScriptExitCode -1
+        CheckLastErrorCode -ScriptExitCode -$CurrentStep
 
         if ($checkContainerCmdOutput) {
             Write-Host "Container $name exists. Please remove container $name and try again." -ForegroundColor Red
-            Exit -2
+            Exit -$CurrentStep
         }
     }
-    Write-Host "Done" -ForegroundColor Green
+    Write-Host "All OK. Done" -ForegroundColor Green
     Write-Host " "
 }
 function CreateNetwork {
-    Write-Host "Start creating network for app and env. Name : $DockerNetwork " -ForegroundColor Magenta
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Creating network for app and env. Name : $DockerNetwork " -ForegroundColor Magenta
     
     $networkInfo = docker network inspect $DockerNetwork -f '{{.Name}}'
     if ($networkInfo -eq $DockerNetwork) {
-        Write-Host "Network $DockerNetwork already exists." -ForegroundColor Red
+        Write-Host "Network $DockerNetwork already exists! " -ForegroundColor Red -NoNewline
+        Write-Host "Skip creating network" -ForegroundColor Cyan
+        CheckLastErrorCode -ScriptExitCode -$CurrentStep
     }
     else {
         Write-Host "Creating network ' $DockerNetwork ' for app and environment"
         docker network create --driver bridge --subnet $NetworkIP $DockerNetwork
         Write-Host "Network created!" -ForegroundColor Green
     }
-    CheckLastErrorCode -ScriptExitCode -3
+    CheckLastErrorCode -ScriptExitCode -$CurrentStep
+    Write-Host " "
 }
-
 function CreateDbContainers {
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
     Write-Host "Creating DB conatiners" -ForegroundColor Magenta
     docker compose -f $DbComposeFile up -d
     Write-Host "Done" -ForegroundColor Green
-    CheckLastErrorCode -ScriptExitCode -4
+    Write-Host " "
+    CheckLastErrorCode -ScriptExitCode -$CurrentStep
 }
 function CreatePostgreSqlUser {
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
     Write-Host "Creating PostgreSQL user $PostgreSqlUser" -ForegroundColor Magenta
 
-    docker exec bpm_postgres /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
+    docker exec "${ProjectName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
     DO`
     \`$\`$`
     BEGIN`
@@ -174,13 +194,15 @@ function CreatePostgreSqlUser {
     END`
     \`$\`$;\"""
     Write-Host "Done" -ForegroundColor Green
-    CheckLastErrorCode -ScriptExitCode -5
+    Write-Host " "
+    CheckLastErrorCode -ScriptExitCode -$CurrentStep
 }
-
 function CreatePostgreSqlDb {
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
     Write-Host "Creating PostgreSQL DB $PostgreSqlDb" -ForegroundColor Magenta
 
-    docker exec bpm_postgres /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
+    docker exec "${ProjectName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
     DO`
     \`$\`$`
     BEGIN`
@@ -193,32 +215,32 @@ function CreatePostgreSqlDb {
     END
     \`$\`$;\"""
     Write-Host "Done" -ForegroundColor Green
-    CheckLastErrorCode -ScriptExitCode -6
+    Write-Host " "
+    CheckLastErrorCode -ScriptExitCode -$CurrentStep
 }
-
 function RestorePostgreSqlDb {
-    Write-Host "Restoring PostgreSQL DB $PostgreSqlDb from backup $PostgreSqlDbBackup" -ForegroundColor Magenta
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Restoring PostgreSQL DB " -ForegroundColor Magenta -NoNewline
+    Write-Host "'$PostgreSqlDb' " -ForegroundColor DarkCyan -NoNewline
+    Write-Host "from backup " -ForegroundColor Magenta -NoNewline
+    Write-Host "'$PostgreSqlDbBackup' " -ForegroundColor DarkCyan
 
     docker exec -i -e PGPASSWORD=$PostgreSqlAdminPassword $PostgreSqlContainer pg_restore --host $PostgreSqlHost --port $PostgreSqlPort --username=$PostgreSqlAdminUser --dbname=$PostgreSqlDb /$PostgreSqlDbBackup
     Write-Host "Done" -ForegroundColor Green
-    CheckLastErrorCode -ScriptExitCode -7
+    Write-Host " "
+    CheckLastErrorCode -ScriptExitCode -$CurrentStep
 }
-
-function CreateAppContainer {
-    Write-Host "Creating Application conatiner" -ForegroundColor Magenta
-    docker compose -f $CreatioComposeFile up -d
-    Write-Host "Done" -ForegroundColor Green
-    CheckLastErrorCode -ScriptExitCode -8
-}
-
 function UpdateFile() {
     param (
         [string] $Path,
         [string] $SearchPattern,
         [string] $ReplacePattern
     )
-
-    Write-Host "Updating file $Path" -ForegroundColor Magenta
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Updating file" -ForegroundColor Magenta -NoNewline
+    Write-Host "'$Path'" -ForegroundColor DarkCyan
 
     $fileContent = Get-Content -Path $Path
     $selectString = ($fileContent | Select-String -Pattern "(.*)($SearchPattern)(.*)")
@@ -228,15 +250,28 @@ function UpdateFile() {
         $updatedFileContent = $fileContent -replace [Regex]::Escape($selectString.Line), $replaceString
         $updatedFileContent | Set-Content -Path $Path -Encoding UTF8
     }
-    Write-Host "Done. Current value: $ReplacePattern" -ForegroundColor Green
-    CheckLastErrorCode -ScriptExitCode -9
+    Write-Host "Done. Current value: " -ForegroundColor Green
+    Write-Host "'$ReplacePattern'" -ForegroundColor DarkCyan
+    Write-Host " "
+    CheckLastErrorCode -ScriptExitCode -$CurrentStep
+}
+function CreateAppContainer {
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Creating Application conatiner" -ForegroundColor Magenta
+    docker compose -f $CreatioComposeFile up -d
+    Write-Host "Done" -ForegroundColor Green
+    Write-Host " "
+    CheckLastErrorCode -ScriptExitCode -$CurrentStep
 }
 
-# Main script flow
+
+# MAIN SCRIPT FLOW
 
 ClearLastExitCode
 GenerateEnvComposeFromTemplate
 GenerateAppComposeFromTemplate
+RenameDbBackup
 CheckContainers
 CreateNetwork
 CreateDbContainers

@@ -204,7 +204,7 @@ function RestorePostgreSqlDb {
     CheckLastErrorCode -ScriptExitCode -7
 }
 
-function CreateBpmContainer {
+function CreateAppContainer {
     Write-Host "Creating Application conatiner" -ForegroundColor Magenta
     docker compose -f $CreatioComposeFile up -d
     Write-Host "Done" -ForegroundColor Green
@@ -248,4 +248,4 @@ UpdateFile -Path "Terrasoft.WebHost.dll.config" -SearchPattern '<add key="UseSta
 UpdateFile -Path "Terrasoft.WebHost.dll.config" -SearchPattern '<add key="CookiesSameSiteMode" value="None" />' -ReplacePattern '<add key="CookiesSameSiteMode" value="Lax" />'
 UpdateFile -Path "ConnectionStrings.config" -SearchPattern '<add name="db" connectionString=".*" />' -ReplacePattern "<add name=`"db`" connectionString=`"$PostgreSqlConnectionString`" />"
 UpdateFile -Path "ConnectionStrings.config" -SearchPattern '<add name="redis" connectionString=".*" />' -ReplacePattern "<add name=`"redis`" connectionString=`"$RedisConnectionString`" />"
-CreateBpmContainer
+CreateAppContainer

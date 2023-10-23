@@ -4,15 +4,23 @@
 # GLOBAL VARIABLES
 # EDIT ONLY $ProjectName and (if requiered) $NetworkIP 
 # [!] DO NOT USE U-P-P-E-R-C-A-S-E in $ProjectName [!]
-$ProjectName = "demo"
-$NetworkIP = '172.24.0.0/16'
+# [!] IF you need one more creatio, replace $ProjectName amd ApplicationPort and , If you need another env
+$EnvironmentName = "demo"
+
+$ProjectName = "one"
+$ApplicationPort_1 = "5000:5000"
+$ApplicationPort_2 = "5002:5002"
+
+# network 
+$DockerNetwork = "${EnvironmentName}_environment_service_network"
+$NetworkIP = '172.23.0.0/16'
+
 $ApplicationDockerComposeOutputName = "docker-compose_creatio-linux.yml"
 $EnvironmentDockerComposeOutputName = "docker-compose_creatio-db.yml"
 
-# ---------------------------
 #Containers
-$PostgreSqlContainer = "${ProjectName}_postgres"
-$ContainerNames = @($PostgreSqlContainer, "${ProjectName}_pgadmin", "${ProjectName}_redis", "${ProjectName}_linux")
+$PostgreSqlContainer = "${EnvironmentName}_postgres"
+$ContainerNames = @($PostgreSqlContainer, "${EnvironmentName}_pgadmin", "${EnvironmentName}_redis", "${ProjectName}_linux")
 $DbComposeFile = "$EnvironmentDockerComposeOutputName"
 $CreatioComposeFile = "$ApplicationDockerComposeOutputName"
 # psql
@@ -22,22 +30,21 @@ $PostgreSqlAdminUser = "postgres"
 $PostgreSqlAdminPassword = "postgres"
 $PostgreSqlUser = "puser"
 $PostgreSqlPassword = "Creatio+"
-$PostgreSqlDb = "creatio_7185_sales_enterprise_linux"
-$PostgreSqlDbBackup = "db/creatio_7185_sales_enterprise_linux.backup"
+$PostgreSqlDb = "${ProjectName}_creatio_7185_sales_enterprise_linux"
+$PostgreSqlDbBackup = "db/${PostgreSqlDb}.backup"
 # redis
 $RedisHost = "redis-7"
 $RedisPort = 6379
 $RedisPassword = "redispwd"
 $RedisDb = 1
-# network 
-$DockerNetwork = "${ProjectName}_environment_service_network"
+
 # DB connection strings
 $PostgreSqlConnectionString = "Pooling=True;Database=$PostgreSqlDb;Host=$PostgreSqlHost;Port=$PostgreSqlPort;Username=$PostgreSqlUser;Password=$PostgreSqlPassword;Timeout=500;Command Timeout=400"
 $RedisConnectionString = "host=$RedisHost;db=$RedisDb;port=$RedisPort;password=$RedisPassword"
 
 # Steps counter
 $Global:CurrentStep = 0
-$Global:TotalSteps = 15
+$Global:TotalSteps = 16
 
 #FUNCTIONS
 function ClearLastExitCode {
@@ -55,11 +62,11 @@ function GenerateEnvComposeFromTemplate {
     $Global:CurrentStep++
     Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
     Write-Host "Generate Environment docker-compose from template" -ForegroundColor Magenta
-    $ContainerNameCompose = "${ProjectName}_environment"
-    $PostgresContainerName = "${ProjectName}_postgres"
-    $PgAdminContainerName = "${ProjectName}_pgadmin"
-    $RedisContainerName = "${ProjectName}_redis"
-    $NetworkNameCompose = "${ProjectName}_environment_service_network"
+    $ContainerNameCompose = "${EnvironmentName}_environment"
+    $PostgresContainerName = "${EnvironmentName}_postgres"
+    $PgAdminContainerName = "${EnvironmentName}_pgadmin"
+    $RedisContainerName = "${EnvironmentName}_redis"
+    $NetworkNameCompose = "${EnvironmentName}_environment_service_network"
 
     # Get context from template
     $dockerComposeContent = Get-Content -Path "docker-compose.creatio-db-template.yml"
@@ -83,7 +90,8 @@ function GenerateAppComposeFromTemplate {
     $ContainerNameCompose = "${ProjectName}_linux"
     $SystemNameCompose = "${ProjectName}_system"
     $HostNameCompose = "${ProjectName}-linux"
-    $NetworkNameCompose = "${ProjectName}_environment_service_network"
+    $NetworkNameCompose = "${EnvironmentName}_environment_service_network"
+    
 
     # Get context from template
     $dockerComposeContent = Get-Content -Path "docker-compose.creatio-linux-template.yml"
@@ -93,6 +101,8 @@ function GenerateAppComposeFromTemplate {
     $dockerComposeContent = $dockerComposeContent -replace "<%= container_name %>", $ContainerNameCompose
     $dockerComposeContent = $dockerComposeContent -replace "<%= hostname %>", $HostNameCompose
     $dockerComposeContent = $dockerComposeContent -replace "<%= network_name %>", $NetworkNameCompose
+    $dockerComposeContent = $dockerComposeContent -replace "<%= application_port_1 %>", $ApplicationPort_1
+    $dockerComposeContent = $dockerComposeContent -replace "<%= application_port_2 %>", $ApplicationPort_2
 
     # Create docker-compose for this project
     $dockerComposeContent | Set-Content -Path "$ApplicationDockerComposeOutputName"
@@ -114,7 +124,7 @@ function RenameDbBackup {
             $OldName = $BackupFile.Name
             $NewName = "$PostgreSqlDb.backup"
             $OldFullPath = $BackupFile.FullName
-            $NewFullPath = Join-Path -Path $pathToBackup -ChildPath $NewName
+            #$NewFullPath = Join-Path -Path $pathToBackup -ChildPath $NewName
 
             Rename-Item -Path $OldFullPath -NewName $NewName
             Write-Host "Backup File '$OldName' renamed '$NewName' succesfully." -ForegroundColor Green
@@ -142,8 +152,16 @@ function CheckContainers() {
         CheckLastErrorCode -ScriptExitCode -$CurrentStep
 
         if ($checkContainerCmdOutput) {
-            Write-Host "Container $name exists. Please remove container $name and try again." -ForegroundColor Red
-            Exit -$CurrentStep
+            Write-Host "Container $name exists. Please remove container $name and try again." -ForegroundColor Cyan
+            $InputText = Read-Host "Do you want to continue (yes/no)?"
+            if ($InputText -eq "no") {
+                Write-Host "Script execution aborted." -ForegroundColor Red
+                Exit -$CurrentStep
+            }
+            esle {
+                Write-Host "Script execution continue." -ForegroundColor Green
+            }
+
         }
     }
     Write-Host "All OK. Done" -ForegroundColor Green
@@ -177,12 +195,14 @@ function CreateDbContainers {
     Write-Host " "
     CheckLastErrorCode -ScriptExitCode -$CurrentStep
 }
-function CreatePostgreSqlUser {
+<#function CreatePostgreSqlUser {
     $Global:CurrentStep++
     Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
     Write-Host "Creating PostgreSQL user $PostgreSqlUser" -ForegroundColor Magenta
+    
+    $checkUserExistence = docker exec "${EnvironmentName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -tAc `"SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = `'$PostgreSqlUser`'\"
 
-    docker exec "${ProjectName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
+    docker exec "${EnvironmentName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
     DO`
     \`$\`$`
     BEGIN`
@@ -197,12 +217,80 @@ function CreatePostgreSqlUser {
     Write-Host " "
     CheckLastErrorCode -ScriptExitCode -$CurrentStep
 }
-function CreatePostgreSqlDb {
+#>
+function CreatePostgreSqlUser {
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Creating PostgreSQL user $PostgreSqlUser" -ForegroundColor Magenta
+
+    $checkUserExistence = docker exec "${EnvironmentName}_postgres" psql -U $PostgreSqlAdminUser -c "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '$PostgreSqlUser';"
+
+    if ($checkUserExistence -eq $null) {
+        Write-Host "Error occurred when checking the user existence" -ForegroundColor Red
+        exit -$CurrentStep
+    } 
+    else {
+        $checkUserExistence = $checkUserExistence.Trim()
+        if ($checkUserExistence -eq "1") {
+            Write-Host "User already exists, skip" -ForegroundColor Cyan
+        } 
+        else {
+            docker exec "${EnvironmentName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
+            DO`
+            \`$\`$`
+            BEGIN`
+                IF EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$PostgreSqlUser') THEN`
+                    RAISE EXCEPTION 'Role $PostgreSqlUser already exists';`
+                ELSE`
+                    CREATE ROLE $PostgreSqlUser LOGIN PASSWORD '$PostgreSqlPassword';`
+                END IF;`
+            END`
+            \`$\`$;\"""
+            
+        }
+    }
+    Write-Host "Done" -ForegroundColor Green
+    Write-Host " "
+    CheckLastErrorCode -ScriptExitCode -$CurrentStep
+}
+
+<# function CreatePostgreSqlDb {
     $Global:CurrentStep++
     Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
     Write-Host "Creating PostgreSQL DB $PostgreSqlDb" -ForegroundColor Magenta
 
     docker exec "${ProjectName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
+    DO`
+    \`$\`$`
+    BEGIN`
+       CREATE EXTENSION IF NOT EXISTS dblink;`
+       IF EXISTS (SELECT FROM pg_database WHERE datname = '$PostgreSqlDb') THEN`
+          RAISE EXCEPTION 'Database $PostgreSqlDb exists';
+       ELSE
+          PERFORM dblink_exec('dbname=' || current_database(), 'CREATE DATABASE $PostgreSqlDb WITH OWNER = $PostgreSqlUser ENCODING = ''UTF8''');
+       END IF;
+    END
+    \`$\`$;\"""
+    Write-Host "Done" -ForegroundColor Green
+    Write-Host " "
+    CheckLastErrorCode -ScriptExitCode -$CurrentStep
+}#>
+function CreatePostgreSqlDb {
+    $Global:CurrentStep++
+    Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Creating PostgreSQL DB $PostgreSqlDb" -ForegroundColor Magenta
+
+    $checkDbExistence = docker exec "${EnvironmentName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -tAc `"SELECT 1 FROM pg_database WHERE datname = '$PostgreSqlDb'`""
+
+    if ($checkDbExistence -eq "1") {
+        $continue = Read-Host "Database $PostgreSqlDb already exists. Do you want to continue? (yes/no)"
+        if ($continue -ne "yes") {
+            Write-Host "Operation canceled" -ForegroundColor Cyan
+            exit -$CurrentStep
+        }
+    }
+
+    docker exec "${EnvironmentName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
     DO`
     \`$\`$`
     BEGIN`
@@ -283,4 +371,5 @@ UpdateFile -Path "Terrasoft.WebHost.dll.config" -SearchPattern '<add key="UseSta
 UpdateFile -Path "Terrasoft.WebHost.dll.config" -SearchPattern '<add key="CookiesSameSiteMode" value="None" />' -ReplacePattern '<add key="CookiesSameSiteMode" value="Lax" />'
 UpdateFile -Path "ConnectionStrings.config" -SearchPattern '<add name="db" connectionString=".*" />' -ReplacePattern "<add name=`"db`" connectionString=`"$PostgreSqlConnectionString`" />"
 UpdateFile -Path "ConnectionStrings.config" -SearchPattern '<add name="redis" connectionString=".*" />' -ReplacePattern "<add name=`"redis`" connectionString=`"$RedisConnectionString`" />"
+UpdateFile -Path "Dockerfile" -SearchPattern 'EXPOSE 5000 5002' -ReplacePattern "EXPOSE $ApplicationPort_1 $ApplicationPort_2"
 CreateAppContainer

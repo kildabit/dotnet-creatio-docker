@@ -27,7 +27,7 @@ services:
   
   pgadmin:
     container_name: <%= pgadmin_container_name %>
-    image: dpage/pgadmin4:7.7
+    image: dpage/pgadmin4:7.8
     hostname: pgadmin4
     environment:
       PGADMIN_DEFAULT_EMAIL: pgadmin4@pgadmin.org

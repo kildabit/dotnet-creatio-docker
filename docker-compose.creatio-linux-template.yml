@@ -15,8 +15,8 @@ services:
     volumes:
        - ./:/app
     ports:
-      - "5000:5000"
-      - "5002:5002"
+      - <%= application_port_1 %>
+      - <%= application_port_2 %>
     networks:
       - service_network
     restart: unless-stopped

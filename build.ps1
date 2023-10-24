@@ -10,8 +10,8 @@
 $EnvironmentName = "main"
 
 $ProjectName = "one"
-$ApplicationPort_1 = "5000:5000"
-$ApplicationPort_2 = "5002:5002"
+$ApplicationPort_1 = "5000"
+$ApplicationPort_2 = "5002"
 
 # network: you can set name for your network and configure subnet IP
 $DockerNetwork = "${EnvironmentName}_environment_service_network"
@@ -48,7 +48,7 @@ $RedisConnectionString = "host=$RedisHost;db=$RedisDb;port=$RedisPort;password=$
 
 # Steps counter
 $Global:CurrentStep = 0
-$Global:TotalSteps = 16
+$Global:TotalSteps = 18
 
 function ClearLastExitCode {
     $Global:LASTEXITCODE = 0
@@ -92,6 +92,8 @@ function GenerateAppComposeFromTemplate {
     $SystemNameCompose = "${ProjectName}_system"
     $HostNameCompose = "${ProjectName}-linux"
     $NetworkNameCompose = "${EnvironmentName}_environment_service_network"
+    $ComposePort_1 = "${ApplicationPort_1}:${ApplicationPort_1}"
+    $ComposePort_2 = "${ApplicationPort_2}:${ApplicationPort_2}"
     # Get context from template
     $dockerComposeContent = Get-Content -Path "docker-compose.creatio-linux-template.yml"
     # Updating context in template
@@ -99,8 +101,8 @@ function GenerateAppComposeFromTemplate {
     $dockerComposeContent = $dockerComposeContent -replace "<%= container_name %>", $ContainerNameCompose
     $dockerComposeContent = $dockerComposeContent -replace "<%= hostname %>", $HostNameCompose
     $dockerComposeContent = $dockerComposeContent -replace "<%= network_name %>", $NetworkNameCompose
-    $dockerComposeContent = $dockerComposeContent -replace "<%= application_port_1 %>", $ApplicationPort_1
-    $dockerComposeContent = $dockerComposeContent -replace "<%= application_port_2 %>", $ApplicationPort_2
+    $dockerComposeContent = $dockerComposeContent -replace "<%= application_port_1 %>", $ComposePort_1
+    $dockerComposeContent = $dockerComposeContent -replace "<%= application_port_2 %>", $ComposePort_2
     # Create docker-compose for this project
     $dockerComposeContent | Set-Content -Path "$ApplicationDockerComposeOutputName"
     CheckLastErrorCode -ScriptExitCode -$CurrentStep
@@ -117,21 +119,21 @@ function RenameDbBackup {
     $BackupFile = Get-ChildItem -Path $pathToBackup -Filter *$FileNameExtension
         
     if ($BackupFile.Count -eq 1) {
-            $OldName = $BackupFile.Name
-            $NewName = "$PostgreSqlDb.backup"
-            $OldFullPath = $BackupFile.FullName
-            #$NewFullPath = Join-Path -Path $pathToBackup -ChildPath $NewName
+        $OldName = $BackupFile.Name
+        $NewName = "$PostgreSqlDb.backup"
+        $OldFullPath = $BackupFile.FullName
+        #$NewFullPath = Join-Path -Path $pathToBackup -ChildPath $NewName
 
-            Rename-Item -Path $OldFullPath -NewName $NewName
-            Write-Host "Backup File '$OldName' renamed '$NewName' succesfully." -ForegroundColor Green
+        Rename-Item -Path $OldFullPath -NewName $NewName
+        Write-Host "Backup File '$OldName' renamed '$NewName' succesfully." -ForegroundColor Green
     } 
     elseif ($BackupFile.Count -eq 0) {
-            Write-Host "File with extension '$FileNameExtension' not found." -ForegroundColor Red
-            Exit -$CurrentStep
+        Write-Host "File with extension '$FileNameExtension' not found." -ForegroundColor Red
+        Exit - $CurrentStep
     } 
     else {
-            Write-Host "There are more then 1 file  *.'$FileNameExtension' in pathToBackup." -ForegroundColor Red
-            Exit -$CurrentStep    
+        Write-Host "There are more then 1 file  *.'$FileNameExtension' in pathToBackup." -ForegroundColor Red
+        Exit - $CurrentStep    
     }
     Write-Host " "
     CheckLastErrorCode -ScriptExitCode -$CurrentStep
@@ -149,9 +151,9 @@ function CheckContainers() {
         if ($checkContainerCmdOutput) {
             Write-Host "Container $name exists. Please remove container $name and try again." -ForegroundColor Cyan
             $InputText = Read-Host "Do you want to continue (yes/no)?"
-            if ($InputText -eq "no") {
+            if ($InputText -eq "no" -or $InputText -eq "n") {
                 Write-Host "Script execution aborted." -ForegroundColor Red
-                Exit -$CurrentStep
+                Exit - $CurrentStep
             }
             else {
                 Write-Host "Script execution continue." -ForegroundColor Green
@@ -198,13 +200,12 @@ function CreatePostgreSqlUser {
     Write-Host "Creating PostgreSQL user $PostgreSqlUser" -ForegroundColor Magenta
 
     $checkUserExistence = docker exec "${EnvironmentName}_postgres" psql -U $PostgreSqlAdminUser -c "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '$PostgreSqlUser';"
-
-    if ($checkUserExistence -eq $null) {
+    $checkUserExistence = $checkUserExistence.Trim()
+    if ($null -eq $checkUserExistence) {
         Write-Host "Error occurred when checking the user existence" -ForegroundColor Red
-        exit -$CurrentStep
+        exit - $CurrentStep
     } 
     else {
-        $checkUserExistence = $checkUserExistence.Trim()
         if ($checkUserExistence -eq "1") {
             Write-Host "User already exists, skip" -ForegroundColor Cyan
         } 
@@ -231,33 +232,55 @@ function CreatePostgreSqlUser {
 function CreatePostgreSqlDb {
     $Global:CurrentStep++
     Write-Host "[$CurrentStep/$TotalSteps] " -NoNewline -ForegroundColor DarkYellow
-    Write-Host "Creating PostgreSQL DB $PostgreSqlDb" -ForegroundColor Magenta
+    Write-Host "Checking PostgreSQL DB $PostgreSqlDb" -ForegroundColor Magenta
 
-    $checkDbExistence = docker exec "${EnvironmentName}_postgres" psql -U $PostgreSqlAdminUser -tAc "SELECT 1 FROM pg_database WHERE datname = '$PostgreSqlDb'"
+    $checkDbExistence = docker exec "${EnvironmentName}_postgres" psql -U $PostgreSqlAdminUser -c "SELECT 1 FROM pg_database WHERE datname = '$PostgreSqlDb'"
+    $checkDbExistence = $checkDbExistence.Trim()
 
     if ($checkDbExistence -eq "1") {
-        $continue = Read-Host "Database $PostgreSqlDb already exists. Do you want to continue? (yes/no)"
-        if ($continue -ne "yes") {
-            Write-Host "Operation canceled" -ForegroundColor Cyan
-            exit -$CurrentStep
-        }
-    }
+        $continue = Read-Host "Database $PostgreSqlDb already exists. Do you want to recreate it? (yes/no)"
+        if ($continue -eq "yes") {
+            
+            # check active sessions
+            $activeConnections = docker exec "${EnvironmentName}_postgres" psql -U $PostgreSqlAdminUser -d postgres -c "SELECT count(*) FROM pg_stat_activity WHERE pg_stat_activity.datname = '$PostgreSqlDb';"
+            $activeConnections = $activeConnections.Trim()
+            if ($activeConnections -gt 0) {
+                Write-Host "Active connections found in $PostgreSqlDb. Killing connections..."
+                
+                # kill active sessions
+                $terminateSessions = docker exec "${EnvironmentName}_postgres" psql -U $PostgreSqlAdminUser -d postgres -c "SELECT pg_terminate_backend (pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = '$PostgreSqlDb' AND pg_stat_activity.pid <> pg_backend_pid();"
+                $terminateSessions = $terminateSessions.Trim()
 
+                Write-Host "All active connections $PostgreSqlDb droped." -ForegroundColor Green
+            }
+            else {
+                Write-Host "Active connections to $PostgreSqlDb not found." -ForegroundColor Green
+            }
+        
+            Write-Host "Recreating the database $PostgreSqlDb..." -ForegroundColor Cyan
+            docker exec "${EnvironmentName}_postgres" psql -U $PostgreSqlAdminUser -c "DROP DATABASE IF EXISTS $PostgreSqlDb;"
+            
+        }
+    }      
+    #else {
+    Write-Host "Database with datname = `'$PostgreSqlDb`' does not exists - creating..." -ForegroundColor Cyan
     docker exec "${EnvironmentName}_postgres" /bin/sh -c "psql -U $PostgreSqlAdminUser -c \""`
-    DO`
-    \`$\`$`
-    BEGIN`
-       CREATE EXTENSION IF NOT EXISTS dblink;`
-       IF EXISTS (SELECT FROM pg_database WHERE datname = '$PostgreSqlDb') THEN`
-          RAISE EXCEPTION 'Database $PostgreSqlDb exists';
-       ELSE
-          PERFORM dblink_exec('dbname=' || current_database(), 'CREATE DATABASE $PostgreSqlDb WITH OWNER = $PostgreSqlUser ENCODING = ''UTF8''');
-       END IF;
-    END
-    \`$\`$;\"""
+            DO`
+            \`$\`$`
+            BEGIN`
+            CREATE EXTENSION IF NOT EXISTS dblink;`
+            IF EXISTS (SELECT FROM pg_database WHERE datname = '$PostgreSqlDb') THEN`
+                RAISE EXCEPTION 'Database $PostgreSqlDb exists';
+            ELSE
+                PERFORM dblink_exec('dbname=' || current_database(), 'CREATE DATABASE $PostgreSqlDb WITH OWNER = $PostgreSqlUser ENCODING = ''UTF8''');
+            END IF;
+            END
+            \`$\`$;\"""
     Write-Host "Done" -ForegroundColor Green
     Write-Host " "
+
     CheckLastErrorCode -ScriptExitCode -$CurrentStep
+    #}
 }
 function RestorePostgreSqlDb {
     $Global:CurrentStep++
@@ -306,7 +329,6 @@ function CreateAppContainer {
     CheckLastErrorCode -ScriptExitCode -$CurrentStep
 }
 
-
 # MAIN SCRIPT FLOW
 
 ClearLastExitCode
@@ -325,4 +347,6 @@ UpdateFile -Path "Terrasoft.WebHost.dll.config" -SearchPattern '<add key="Cookie
 UpdateFile -Path "ConnectionStrings.config" -SearchPattern '<add name="db" connectionString=".*" />' -ReplacePattern "<add name=`"db`" connectionString=`"$PostgreSqlConnectionString`" />"
 UpdateFile -Path "ConnectionStrings.config" -SearchPattern '<add name="redis" connectionString=".*" />' -ReplacePattern "<add name=`"redis`" connectionString=`"$RedisConnectionString`" />"
 UpdateFile -Path "Dockerfile" -SearchPattern 'EXPOSE 5000 5002' -ReplacePattern "EXPOSE $ApplicationPort_1 $ApplicationPort_2"
+UpdateFile -Path "appsettings.json" -SearchPattern "5000" -ReplacePattern "$ApplicationPort_1"
+UpdateFile -Path "appsettings.json" -SearchPattern "5002" -ReplacePattern "$ApplicationPort_2"
 CreateAppContainer

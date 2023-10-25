@@ -2,6 +2,19 @@
 
 Скрипт предназначен для автоматического создания и запуска образов и контейнеров, необходимых для функционирования
 
+# Кому лень читать
+1. Соблюсти требования для работы скрипта
+2. Распаковать архив приложения
+3. Переместить файлы **build.ps1**, **docker-compose.creatio-db-template.yml**, **docker-compose.creatio-linux-template.yml** в папку из п.2
+4. Открыть **build.ps1**:
+    - дать название окружению (нижний регистр) <span style="color:orange">$EnvironmentName</span>
+    - дать название приложению (нижний регистр) <span style="color:orange">$ProjectName</span>
+    - указать номер БД redis (по умолчанию 1) <span style="color:orange">$RedisDb</span>
+    - назначить порты для http/https <span style="color:orange">$ApplicationPort_1</span>; <span style="color:orange">$ApplicationPort_2</span>
+5. Открыть терминал/powershell в корне каталога приложения
+6. Запустить <span style="color:yellow">".\build.ps1"</span>
+
+
 ## Требования для работы скрипта ##
 
 На целевом хосте должны быть выполнены следующие требования:
